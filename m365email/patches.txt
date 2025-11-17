@@ -6,3 +6,5 @@
 # Patches added in this section will be executed after doctypes are migrated
 m365email.patches.add_email_queue_custom_fields
 m365email.patches.migrate_enable_fields
+m365email.patches.add_event_custom_fields
+m365email.patches.add_event_timezone_field

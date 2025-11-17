@@ -10,6 +10,7 @@ import frappe
 from frappe import _
 from m365email.m365email.auth import test_connection, get_access_token
 from m365email.m365email.sync import sync_email_account
+from m365email.m365email.event_sync import sync_calendar_events
 from m365email.m365email.graph_api import get_mail_folders
 from m365email.m365email.utils import user_can_configure_account
 
@@ -101,21 +102,43 @@ def disable_email_sync(email_account_name):
 def trigger_manual_sync(email_account_name):
 	"""
 	Manually trigger sync for an email account
-	
+
 	Args:
 		email_account_name: Name of M365 Email Account
-		
+
 	Returns:
 		dict: Sync results
 	"""
 	account = frappe.get_doc("M365 Email Account", email_account_name)
-	
+
 	# Check permissions
 	if not user_can_configure_account(frappe.session.user, account):
 		frappe.throw(_("You don't have permission to sync this email account"))
-	
+
 	result = sync_email_account(email_account_name)
-	
+
+	return result
+
+
+@frappe.whitelist()
+def trigger_manual_event_sync(email_account_name):
+	"""
+	Manually trigger calendar event sync for an email account
+
+	Args:
+		email_account_name: Name of M365 Email Account
+
+	Returns:
+		dict: Sync results
+	"""
+	account = frappe.get_doc("M365 Email Account", email_account_name)
+
+	# Check permissions
+	if not user_can_configure_account(frappe.session.user, account):
+		frappe.throw(_("You don't have permission to sync this email account"))
+
+	result = sync_calendar_events(email_account_name)
+
 	return result
 
 

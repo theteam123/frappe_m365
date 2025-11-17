@@ -8,6 +8,7 @@ Scheduled tasks for M365 Email Integration
 import frappe
 from frappe import _
 from m365email.m365email.sync import sync_email_account
+from m365email.m365email.event_sync import sync_calendar_events
 from m365email.m365email.auth import refresh_token, test_connection
 
 
@@ -63,6 +64,64 @@ def sync_all_email_accounts():
 
 	print(
 		f"M365 Email: Scheduled sync completed - "
+		f"Success: {success_count}, Failed: {failed_count}"
+	)
+
+
+def sync_all_calendar_events():
+	"""
+	Sync calendar events for all accounts with event sync enabled
+	Scheduled to run every 5 minutes
+	"""
+	print("M365 Email: Starting scheduled calendar event sync for all accounts with event sync enabled")
+
+	# Get all accounts with event sync enabled
+	accounts = frappe.get_all(
+		"M365 Email Account",
+		filters={"sync_events": 1},
+		fields=["name", "account_name", "email_address", "account_type"]
+	)
+
+	if not accounts:
+		print("M365 Email: No accounts with event sync enabled found")
+		return
+
+	print(f"M365 Email: Found {len(accounts)} account(s) with event sync enabled")
+
+	success_count = 0
+	failed_count = 0
+
+	for account in accounts:
+		try:
+			print(f"M365 Email: Syncing calendar events for {account.account_name} ({account.email_address})")
+			result = sync_calendar_events(account.name)
+
+			if result.get("success"):
+				success_count += 1
+				print(
+					f"M365 Email: Successfully synced events for {account.account_name} - "
+					f"Fetched: {result.get('fetched', 0)}, "
+					f"Created: {result.get('created', 0)}, "
+					f"Updated: {result.get('updated', 0)}, "
+					f"Deleted: {result.get('deleted', 0)}, "
+					f"Skipped: {result.get('skipped', 0)}"
+				)
+			else:
+				failed_count += 1
+				print(
+					f"M365 Email: Failed to sync events for {account.account_name} - "
+					f"Error: {result.get('message')}"
+				)
+		except Exception as e:
+			failed_count += 1
+			print(f"M365 Email: Exception syncing events for {account.account_name}: {str(e)}")
+			frappe.log_error(
+				title="M365 Event Sync Failed",
+				message=f"Account: {account.account_name}\nEmail: {account.email_address}\n\nError: {str(e)}"
+			)
+
+	print(
+		f"M365 Email: Calendar event sync completed - "
 		f"Success: {success_count}, Failed: {failed_count}"
 	)
 

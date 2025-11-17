@@ -11,9 +11,11 @@
   "account_type",
   "email_address",
   "user",
+  "role",
   "service_principal",
   "enable_incoming",
   "enable_outgoing",
+  "sync_events",
   "default_outgoing",
   "footer",
   "column_break_1",
@@ -60,6 +62,13 @@
    "reqd": 1
   },
   {
+   "description": "Optional: Allow users with this role to use this email account for sending (for shared mailboxes)",
+   "fieldname": "role",
+   "fieldtype": "Link",
+   "label": "Role",
+   "options": "Role"
+  },
+  {
    "fieldname": "service_principal",
    "fieldtype": "Link",
    "label": "Service Principal",
@@ -79,6 +88,13 @@
    "fieldname": "enable_outgoing",
    "fieldtype": "Check",
    "label": "Enable Outgoing"
+  },
+  {
+   "default": "0",
+   "description": "Enable syncing calendar events from M365 to Frappe Events (requires Calendars.Read permission)",
+   "fieldname": "sync_events",
+   "fieldtype": "Check",
+   "label": "Sync Calendar Events"
   },
   {
    "default": "0",
@@ -188,6 +204,11 @@
    "report": 1,
    "role": "System Manager",
    "share": 1,
+   "write": 1
+  },
+  {
+   "read": 1,
+   "role": "M365 User",
    "write": 1
   },
   {

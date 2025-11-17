@@ -262,6 +262,47 @@ def get_all_pages(initial_response, access_token):
 
 
 
+def get_calendar_events_delta(user_email, access_token, delta_token=None):
+	"""
+	Get calendar events using delta query for incremental sync
+
+	Note: Delta queries do not support $select, $filter, $orderby, etc.
+	They return all fields by default.
+
+	Args:
+		user_email: User's email address
+		access_token: Access token
+		delta_token: Delta token from previous sync (None for initial sync)
+
+	Returns:
+		dict: Response with events and delta link
+	"""
+	if delta_token:
+		# Use the delta token URL directly
+		endpoint = delta_token
+	else:
+		# Initial delta query - returns all fields by default
+		endpoint = f"/users/{user_email}/calendar/events/delta"
+
+	return make_graph_request(endpoint, access_token)
+
+
+def get_calendar_event_details(user_email, event_id, access_token):
+	"""
+	Get full event details
+
+	Args:
+		user_email: User's email address
+		event_id: Event ID
+		access_token: Access token
+
+	Returns:
+		dict: Event details
+	"""
+	endpoint = f"/users/{user_email}/calendar/events/{event_id}"
+	return make_graph_request(endpoint, access_token)
+
+
 def send_email_as_user(sender_email, recipients, subject, body, access_token, cc=None, bcc=None, attachments=None, is_html=True):
 	"""
 	Send email as a specific user using Microsoft Graph API

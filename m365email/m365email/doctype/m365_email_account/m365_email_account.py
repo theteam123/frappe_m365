@@ -81,6 +81,10 @@ def has_permission(doc, ptype, user):
 	if doc.account_type == "User Mailbox" and doc.user == user:
 		return True
 
-	# For Shared Mailbox: only System Manager can access
+	# Check if user has the role assigned to this account
+	if doc.role and doc.role in frappe.get_roles(user):
+		return True
+
+	# For Shared Mailbox: only System Manager can access (unless role is assigned)
 	return False
 

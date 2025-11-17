@@ -11,19 +11,22 @@ from frappe import _
 from datetime import datetime
 from email.utils import parseaddr
 from dateutil import parser as dateutil_parser
+import pytz
 
 
-def parse_m365_datetime(datetime_string):
+def parse_m365_datetime(datetime_string, from_timezone_name=None, to_timezone_name=None):
 	"""
 	Parse M365 datetime string to naive datetime for Frappe
 	M365 returns ISO 8601 format with timezone (e.g., "2025-10-24T07:22:14Z")
 	Frappe/MySQL expects naive datetime without timezone
 
 	Args:
-		datetime_string: ISO 8601 datetime string from M365
+		datetime_string: ISO 8601 datetime string from M365 (usually in UTC)
+		from_timezone_name: Source timezone name (e.g., "UTC", "W. Australia Standard Time")
+		to_timezone_name: Target timezone name for conversion (optional)
 
 	Returns:
-		datetime: Naive datetime object (timezone removed)
+		datetime: Naive datetime object (timezone removed, optionally converted)
 	"""
 	if not datetime_string:
 		return None
@@ -31,9 +34,81 @@ def parse_m365_datetime(datetime_string):
 	# Parse the datetime string (handles timezone)
 	dt = dateutil_parser.parse(datetime_string)
 
+	# If timezone conversion is requested
+	if from_timezone_name and to_timezone_name:
+		try:
+			# Convert Windows timezone names to IANA format
+			from_tz = get_timezone(from_timezone_name)
+			to_tz = get_timezone(to_timezone_name)
+
+			# Make datetime timezone-aware if it isn't already
+			if dt.tzinfo is None:
+				dt = from_tz.localize(dt)
+			else:
+				dt = dt.astimezone(from_tz)
+
+			# Convert to target timezone
+			dt = dt.astimezone(to_tz)
+		except Exception as e:
+			print(f"Timezone conversion failed: {str(e)}")
+
 	# Convert to naive datetime (remove timezone info)
-	# This keeps the UTC time but removes the timezone awareness
+	# This keeps the time value but removes the timezone awareness
 	return dt.replace(tzinfo=None)
+
+
+def get_timezone(timezone_name):
+	"""
+	Convert timezone name to pytz timezone object
+	Handles both IANA and Windows timezone names
+
+	Args:
+		timezone_name: Timezone name (IANA or Windows format)
+
+	Returns:
+		pytz timezone object
+	"""
+	# Map common Windows timezone names to IANA
+	windows_to_iana = {
+		# Australia
+		"W. Australia Standard Time": "Australia/Perth",
+		"AUS Eastern Standard Time": "Australia/Sydney",
+		"E. Australia Standard Time": "Australia/Brisbane",
+		"Cen. Australia Standard Time": "Australia/Adelaide",
+		"Tasmania Standard Time": "Australia/Hobart",
+		"AUS Central Standard Time": "Australia/Darwin",
+
+		# Americas
+		"Pacific Standard Time": "America/Los_Angeles",
+		"Eastern Standard Time": "America/New_York",
+		"Central Standard Time": "America/Chicago",
+		"Mountain Standard Time": "America/Denver",
+
+		# Brazil - Multiple timezones
+		"E. South America Standard Time": "America/Sao_Paulo",  # São Paulo, Rio (UTC-3)
+		"Central Brazilian Standard Time": "America/Cuiaba",    # Cuiabá (UTC-4)
+		"SA Eastern Standard Time": "America/Fortaleza",        # Fortaleza (UTC-3)
+		"SA Pacific Standard Time": "America/Rio_Branco",       # Acre (UTC-5)
+		"Bahia Standard Time": "America/Bahia",                 # Bahia (UTC-3)
+
+		# Europe & Africa
+		"GMT Standard Time": "Europe/London",
+		"Central European Standard Time": "Europe/Paris",
+		"South Africa Standard Time": "Africa/Johannesburg",
+
+		# UTC
+		"UTC": "UTC",
+	}
+
+	# Try to get IANA timezone name
+	iana_name = windows_to_iana.get(timezone_name, timezone_name)
+
+	try:
+		return pytz.timezone(iana_name)
+	except pytz.exceptions.UnknownTimeZoneError:
+		# Fallback to UTC if timezone is unknown
+		print(f"Unknown timezone: {timezone_name}, falling back to UTC")
+		return pytz.UTC
 
 
 def parse_email_address(email_string):

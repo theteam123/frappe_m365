@@ -85,6 +85,11 @@ app_license = "mit"
 # before_install = "m365email.install.before_install"
 after_install = "m365email.m365email.custom_fields.create_m365_custom_fields"
 
+# Boot Session
+# ------------
+# Called when user session is created
+boot_session = "m365email.m365email.boot_session"
+
 # Uninstallation
 # ------------
 
@@ -154,7 +159,8 @@ override_doctype_class = {
 scheduler_events = {
 	"cron": {
 		"*/5 * * * *": [
-			"m365email.m365email.tasks.sync_all_email_accounts"
+			"m365email.m365email.tasks.sync_all_email_accounts",
+			"m365email.m365email.tasks.sync_all_calendar_events"
 		],
 		"* * * * *": [
 			# Process M365 email queue every minute

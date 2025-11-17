@@ -56,6 +56,50 @@ def create_m365_custom_fields():
 				"read_only": 1,
 				"no_copy": 1
 			}
+		],
+		"Event": [
+			{
+				"fieldname": "m365_event_id",
+				"label": "M365 Event ID",
+				"fieldtype": "Data",
+				"length": 500,
+				"insert_after": "event_type",
+				"read_only": 1,
+				"no_copy": 1,
+				"hidden": 1,
+				"unique": 1
+			},
+			{
+				"fieldname": "m365_email_account",
+				"label": "M365 Email Account",
+				"fieldtype": "Link",
+				"options": "M365 Email Account",
+				"insert_after": "m365_event_id",
+				"read_only": 1,
+				"no_copy": 1,
+				"hidden": 1
+			},
+			{
+				"fieldname": "m365_icaluid",
+				"label": "M365 iCalUId",
+				"fieldtype": "Data",
+				"length": 500,
+				"insert_after": "m365_email_account",
+				"read_only": 1,
+				"no_copy": 1,
+				"hidden": 1
+			},
+			{
+				"fieldname": "m365_timezone",
+				"label": "M365 Timezone",
+				"fieldtype": "Data",
+				"length": 100,
+				"insert_after": "m365_icaluid",
+				"read_only": 1,
+				"no_copy": 1,
+				"hidden": 0,
+				"description": "Original timezone from Microsoft 365"
+			}
 		]
 	}
 
