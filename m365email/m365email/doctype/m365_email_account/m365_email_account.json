@@ -20,6 +20,7 @@
   "footer",
   "column_break_1",
   "sync_from_date",
+  "user_timezone",
   "auto_create_contact",
   "sync_attachments",
   "max_attachment_size",
@@ -119,6 +120,14 @@
    "fieldname": "sync_from_date",
    "fieldtype": "Date",
    "label": "Sync From Date"
+  },
+  {
+   "default": "Australia/Perth",
+   "description": "Timezone for displaying calendar events. Events from other timezones will be converted to this timezone.",
+   "fieldname": "user_timezone",
+   "fieldtype": "Select",
+   "label": "User Timezone",
+   "options": "Australia/Perth\nAustralia/Sydney\nAustralia/Brisbane\nAustralia/Adelaide\nAustralia/Hobart\nAustralia/Darwin\nAmerica/Los_Angeles\nAmerica/New_York\nAmerica/Chicago\nAmerica/Denver\nAmerica/Sao_Paulo\nAmerica/Cuiaba\nAmerica/Fortaleza\nAmerica/Rio_Branco\nAmerica/Bahia\nEurope/London\nEurope/Paris\nAfrica/Johannesburg\nUTC"
   },
   {
    "default": "1",

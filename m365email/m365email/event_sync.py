@@ -238,27 +238,30 @@ def create_or_update_event(event_data, email_account, access_token):
 	original_timezone = event_data.get("originalStartTimeZone")
 
 	# Parse datetimes - M365 sends them in UTC
-	# We'll convert to the original timezone if available
+	# We'll convert to the USER's timezone (not the event's original timezone)
 	start_datetime_utc = parse_m365_datetime(event_data.get("start", {}).get("dateTime"))
 	end_datetime_utc = parse_m365_datetime(event_data.get("end", {}).get("dateTime"))
 
-	# Convert from UTC to original timezone if available
-	if original_timezone and start_datetime_utc:
+	# Get user's timezone from email account settings
+	user_timezone = email_account.user_timezone or "Australia/Perth"
+
+	# Convert from UTC to user's timezone
+	if start_datetime_utc:
 		from m365email.m365email.utils import get_timezone
 		import pytz
 
 		try:
 			# Get timezone objects
 			utc_tz = pytz.UTC
-			local_tz = get_timezone(original_timezone)
+			user_tz = get_timezone(user_timezone)
 
 			# Make UTC datetime timezone-aware
 			start_aware = utc_tz.localize(start_datetime_utc)
 			end_aware = utc_tz.localize(end_datetime_utc) if end_datetime_utc else None
 
-			# Convert to local timezone
-			start_local = start_aware.astimezone(local_tz)
-			end_local = end_aware.astimezone(local_tz) if end_aware else None
+			# Convert to user's timezone
+			start_local = start_aware.astimezone(user_tz)
+			end_local = end_aware.astimezone(user_tz) if end_aware else None
 
 			# Convert back to naive datetime for Frappe
 			start_datetime = start_local.replace(tzinfo=None)
@@ -269,7 +272,7 @@ def create_or_update_event(event_data, email_account, access_token):
 			start_datetime = start_datetime_utc
 			end_datetime = end_datetime_utc
 	else:
-		# No timezone info, use UTC times as-is
+		# No datetime, skip
 		start_datetime = start_datetime_utc
 		end_datetime = end_datetime_utc
 
