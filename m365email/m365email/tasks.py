@@ -14,36 +14,37 @@ from m365email.m365email.auth import refresh_token, test_connection
 
 def sync_all_email_accounts():
 	"""
-	Sync all email accounts with incoming enabled
+	Sync all M365 email accounts with incoming enabled
 	Scheduled to run every 5 minutes
 	"""
 	print("M365 Email: Starting scheduled sync for all accounts with incoming enabled")
 
-	# Get all accounts with incoming enabled
-	accounts = frappe.get_all(
-		"M365 Email Account",
-		filters={"enable_incoming": 1},
-		fields=["name", "account_name", "email_address", "account_type"]
-	)
-
-	if not accounts:
-		print("M365 Email: No accounts with incoming enabled found")
-		return
-
-	print(f"M365 Email: Found {len(accounts)} account(s) with incoming enabled")
-
 	success_count = 0
 	failed_count = 0
 
-	for account in accounts:
+	# Sync Email Accounts with service='M365'
+	email_accounts = frappe.get_all(
+		"Email Account",
+		filters={"service": "M365", "enable_incoming": 1},
+		fields=["name", "email_account_name", "email_id"]
+	)
+
+	if not email_accounts:
+		print("M365 Email: No accounts with incoming enabled found")
+		return
+
+	print(f"M365 Email: Found {len(email_accounts)} Email Account(s) with service='M365'")
+
+	for account in email_accounts:
 		try:
-			print(f"M365 Email: Syncing {account.account_name} ({account.email_address})")
+			account_name = account.email_account_name or account.name
+			print(f"M365 Email: Syncing {account_name} ({account.email_id})")
 			result = sync_email_account(account.name)
 
 			if result.get("success"):
 				success_count += 1
 				print(
-					f"M365 Email: Successfully synced {account.account_name} - "
+					f"M365 Email: Successfully synced {account_name} - "
 					f"Fetched: {result.get('fetched', 0)}, "
 					f"Created: {result.get('created', 0)}, "
 					f"Updated: {result.get('updated', 0)}"
@@ -51,15 +52,15 @@ def sync_all_email_accounts():
 			else:
 				failed_count += 1
 				print(
-					f"M365 Email: Failed to sync {account.account_name} - "
+					f"M365 Email: Failed to sync {account_name} - "
 					f"Error: {result.get('message')}"
 				)
 		except Exception as e:
 			failed_count += 1
-			print(f"M365 Email: Exception syncing {account.account_name}: {str(e)}")
+			print(f"M365 Email: Exception syncing {account_name}: {str(e)}")
 			frappe.log_error(
 				title="M365 Email Sync Failed",
-				message=f"Account: {account.account_name}\nEmail: {account.email_address}\n\nError: {str(e)}"
+				message=f"Account: {account_name}\nEmail: {account.email_id}\n\nError: {str(e)}"
 			)
 
 	print(
@@ -75,31 +76,32 @@ def sync_all_calendar_events():
 	"""
 	print("M365 Email: Starting scheduled calendar event sync for all accounts with event sync enabled")
 
-	# Get all accounts with event sync enabled
-	accounts = frappe.get_all(
-		"M365 Email Account",
-		filters={"sync_events": 1},
-		fields=["name", "account_name", "email_address", "account_type"]
-	)
-
-	if not accounts:
-		print("M365 Email: No accounts with event sync enabled found")
-		return
-
-	print(f"M365 Email: Found {len(accounts)} account(s) with event sync enabled")
-
 	success_count = 0
 	failed_count = 0
 
-	for account in accounts:
+	# Sync Email Accounts with service='M365' and m365_sync_events enabled
+	email_accounts = frappe.get_all(
+		"Email Account",
+		filters={"service": "M365", "m365_sync_events": 1},
+		fields=["name", "email_account_name", "email_id"]
+	)
+
+	if not email_accounts:
+		print("M365 Email: No accounts with event sync enabled found")
+		return
+
+	print(f"M365 Email: Found {len(email_accounts)} Email Account(s) with M365 event sync enabled")
+
+	for account in email_accounts:
 		try:
-			print(f"M365 Email: Syncing calendar events for {account.account_name} ({account.email_address})")
+			account_name = account.email_account_name or account.name
+			print(f"M365 Email: Syncing calendar events for {account_name} ({account.email_id})")
 			result = sync_calendar_events(account.name)
 
 			if result.get("success"):
 				success_count += 1
 				print(
-					f"M365 Email: Successfully synced events for {account.account_name} - "
+					f"M365 Email: Successfully synced events for {account_name} - "
 					f"Fetched: {result.get('fetched', 0)}, "
 					f"Created: {result.get('created', 0)}, "
 					f"Updated: {result.get('updated', 0)}, "
@@ -109,15 +111,15 @@ def sync_all_calendar_events():
 			else:
 				failed_count += 1
 				print(
-					f"M365 Email: Failed to sync events for {account.account_name} - "
+					f"M365 Email: Failed to sync events for {account_name} - "
 					f"Error: {result.get('message')}"
 				)
 		except Exception as e:
 			failed_count += 1
-			print(f"M365 Email: Exception syncing events for {account.account_name}: {str(e)}")
+			print(f"M365 Email: Exception syncing events for {account_name}: {str(e)}")
 			frappe.log_error(
 				title="M365 Event Sync Failed",
-				message=f"Account: {account.account_name}\nEmail: {account.email_address}\n\nError: {str(e)}"
+				message=f"Account: {account_name}\nEmail: {account.email_id}\n\nError: {str(e)}"
 			)
 
 	print(

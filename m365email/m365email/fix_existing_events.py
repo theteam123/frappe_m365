@@ -79,25 +79,29 @@ def reset_calendar_delta_token(email_account_name):
 	"""
 	Reset the calendar delta token to force a full resync
 	This will re-fetch all events from M365
-	
+
 	Args:
-		email_account_name: Name of M365 Email Account
+		email_account_name: Name of Email Account with service='M365'
 	"""
 	import json
-	
-	email_account = frappe.get_doc("M365 Email Account", email_account_name)
-	
+
+	email_account = frappe.get_doc("Email Account", email_account_name)
+
+	if email_account.service != "M365":
+		print(f"Error: {email_account_name} is not an M365 email account")
+		return
+
 	delta_tokens = {}
-	if email_account.delta_tokens:
+	if email_account.m365_delta_tokens:
 		try:
-			delta_tokens = json.loads(email_account.delta_tokens)
+			delta_tokens = json.loads(email_account.m365_delta_tokens)
 		except:
 			delta_tokens = {}
-	
+
 	# Remove calendar delta token
 	if "calendar_events" in delta_tokens:
 		del delta_tokens["calendar_events"]
-		email_account.db_set("delta_tokens", json.dumps(delta_tokens), update_modified=False)
+		email_account.db_set("m365_delta_tokens", json.dumps(delta_tokens), update_modified=False)
 		frappe.db.commit()
 		print(f"Reset calendar delta token for {email_account_name}")
 	else:
@@ -109,7 +113,7 @@ def delete_all_m365_events(email_account_name=None):
 	Delete all M365 synced events (optionally for a specific account)
 
 	Args:
-		email_account_name: Name of M365 Email Account (optional - if None, deletes all M365 events)
+		email_account_name: Name of Email Account with service='M365' (optional - if None, deletes all M365 events)
 	"""
 	filters = {"m365_event_id": ["!=", ""]}
 	if email_account_name:

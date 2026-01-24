@@ -131,82 +131,86 @@ def parse_email_address(email_string):
 def parse_recipients(recipients_list):
 	"""
 	Parse list of recipients from M365 message format
-	
+
 	Args:
 		recipients_list: List of recipient dicts from Graph API
-		
+
 	Returns:
-		list: List of email addresses
+		str: Comma-separated string of email addresses (for Communication doctype)
 	"""
 	if not recipients_list:
-		return []
-	
+		return ""
+
 	emails = []
 	for recipient in recipients_list:
 		email_address = recipient.get("emailAddress", {}).get("address")
 		if email_address:
 			emails.append(email_address)
-	
-	return emails
+
+	return ", ".join(emails) if emails else ""
 
 
 def should_sync_message(message, email_account):
 	"""
 	Determine if message should be synced based on filters
-	
+
 	Args:
 		message: Message dict from Graph API
-		email_account: M365 Email Account doc
-		
+		email_account: Email Account doc with service='M365'
+
 	Returns:
 		bool: True if message should be synced
 	"""
 	# Check sync_from_date filter
-	if email_account.sync_from_date:
+	# Use m365_sync_from_date for Email Account
+	sync_from_date = getattr(email_account, 'm365_sync_from_date', None)
+	if sync_from_date:
 		received_datetime = message.get("receivedDateTime")
 		if received_datetime:
 			received_date = frappe.utils.get_datetime(received_datetime).date()
-			if received_date < email_account.sync_from_date:
+			if received_date < sync_from_date:
 				return False
-	
+
 	return True
 
 
 def user_can_configure_account(user, email_account):
 	"""
 	Check if user can configure email account settings
-	
+
 	Args:
 		user: Frappe user
-		email_account: M365 Email Account doc or name
-		
+		email_account: Email Account doc or name (with service='M365')
+
 	Returns:
 		bool: True if user can configure
 	"""
 	if isinstance(email_account, str):
-		email_account = frappe.get_doc("M365 Email Account", email_account)
-	
+		email_account = frappe.get_doc("Email Account", email_account)
+
 	# System Manager can configure all
 	if "System Manager" in frappe.get_roles(user):
 		return True
-	
+
 	# For User Mailbox: user can configure their own
-	if email_account.account_type == "User Mailbox" and email_account.user == user:
+	account_type = getattr(email_account, 'm365_account_type', 'User Mailbox')
+	if account_type == "User Mailbox" and email_account.owner == user:
 		return True
-	
+
 	# For Shared Mailbox: only System Manager
 	return False
 
 
-def get_communication_reference(message_data, email_account):
+def get_communication_reference(subject, sender_email, recipients):
 	"""
 	Determine reference_doctype and reference_name for Communication
 	Can implement logic to auto-link emails to doctypes (e.g., Support Ticket by email parsing)
-	
+
 	Args:
-		message_data: Message dict from Graph API
-		email_account: M365 Email Account doc
-		
+		subject: Email subject line
+		sender_email: Sender's email address
+		recipients: Comma-separated string of recipient email addresses
+
 	Returns:
 		tuple: (reference_doctype, reference_name) or (None, None)
 	"""
@@ -215,7 +219,7 @@ def get_communication_reference(message_data, email_account):
 	# - Parse subject for ticket numbers
 	# - Match sender email to Contact/Lead
 	# - Link to specific doctypes based on rules
-	
+
 	return None, None
 
 
@@ -244,11 +248,11 @@ def format_email_body(body_content, content_type="html"):
 def create_sync_log(email_account, sync_type="Delta Sync"):
 	"""
 	Create a new sync log entry
-	
+
 	Args:
-		email_account: M365 Email Account name or doc
+		email_account: Email Account name or doc (with service='M365')
 		sync_type: Type of sync (Full Sync, Delta Sync, Manual Sync)
-		
+
 	Returns:
 		M365 Email Sync Log doc
 	"""

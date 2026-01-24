@@ -15,7 +15,7 @@ from m365email.m365email.graph_api import send_email_as_user
 
 def auto_provision_m365_account(sender_email):
 	"""
-	Auto-provision M365 Email Account for eligible users
+	Auto-provision Email Account with service='M365' for eligible users
 
 	Eligibility criteria:
 	- User has 'M365 User' role
@@ -26,7 +26,7 @@ def auto_provision_m365_account(sender_email):
 		sender_email: Email address of the sender
 
 	Returns:
-		M365EmailAccount doc if auto-provisioned, None otherwise
+		Email Account doc if auto-provisioned, None otherwise
 	"""
 	try:
 		# Get the user from email
@@ -63,23 +63,23 @@ def auto_provision_m365_account(sender_email):
 		user_doc = frappe.get_doc("User", user)
 		user_full_name = user_doc.full_name or user_doc.first_name or user
 
-		# Prepare footer with replaced placeholder
-		footer = ""
+		# Prepare signature with replaced placeholder
+		signature = ""
 		if sp_doc.default_footer:
-			footer = sp_doc.default_footer.replace("<!--Sender-->", user_full_name)
+			signature = sp_doc.default_footer.replace("<!--Sender-->", user_full_name)
 
-		# Create M365 Email Account
+		# Create Email Account with service='M365'
 		account = frappe.get_doc({
-			"doctype": "M365 Email Account",
-			"account_name": f"{user_full_name} ({sender_email})",
-			"account_type": "User Mailbox",
-			"email_address": sender_email,
-			"user": user,
-			"service_principal": sp_doc.name,
+			"doctype": "Email Account",
+			"email_account_name": f"{user_full_name} ({sender_email})",
+			"service": "M365",
+			"email_id": sender_email,
+			"m365_account_type": "User Mailbox",
+			"m365_service_principal": sp_doc.name,
 			"enable_incoming": 0,  # Only enable outgoing by default
 			"enable_outgoing": 1,
 			"default_outgoing": 0,
-			"footer": footer
+			"signature": signature
 		})
 
 		account.insert(ignore_permissions=True)
@@ -99,14 +99,20 @@ def auto_provision_m365_account(sender_email):
 
 def get_sending_account_for_sender(sender_email):
 	"""
-	Get the M365 Email Account for a specific sender email
-	First tries to match sender email, then auto-provisions if eligible, then falls back to default outgoing account
+	Get the Email Account for a specific sender email.
+
+	Checks in order:
+	1. Email Account with service='M365' matching sender
+	2. Auto-provision if eligible
+	3. Default M365 outgoing account
 
 	Args:
 		sender_email: Email address of the sender
 
 	Returns:
-		tuple: (M365EmailAccount, is_matched) where is_matched=True if sender matched an account
+		tuple: (account_doc, is_matched)
+			- account_doc: Email Account doc with service='M365'
+			- is_matched: True if sender matched an account
 	"""
 	from email.utils import parseaddr
 
@@ -114,32 +120,27 @@ def get_sending_account_for_sender(sender_email):
 	if sender_email:
 		_, sender_email = parseaddr(sender_email)
 
-	# First, try to find an account matching the sender email
+	# Try to find an Email Account with service='M365' matching the sender
 	if sender_email and '@' in sender_email:
 		account_name = frappe.db.get_value(
-			"M365 Email Account",
-			{"email_address": sender_email, "enable_outgoing": 1}
+			"Email Account",
+			{"service": "M365", "email_id": sender_email, "enable_outgoing": 1}
 		)
-
 		if account_name:
-			print(f"M365 Email: Found matching account for sender {sender_email}")
-			return frappe.get_doc("M365 Email Account", account_name), True
+			return frappe.get_doc("Email Account", account_name), True
 
 		# Try auto-provisioning if no account found
 		auto_provisioned_account = auto_provision_m365_account(sender_email)
 		if auto_provisioned_account:
-			print(f"M365 Email: Auto-provisioned account for sender {sender_email}")
 			return auto_provisioned_account, True
 
 	# Fall back to default outgoing account
 	account_name = frappe.db.get_value(
-		"M365 Email Account",
-		{"default_outgoing": 1, "enable_outgoing": 1}
+		"Email Account",
+		{"service": "M365", "default_outgoing": 1, "enable_outgoing": 1}
 	)
-
 	if account_name:
-		print(f"M365 Email: Using default outgoing account (sender {sender_email} didn't match any account)")
-		return frappe.get_doc("M365 Email Account", account_name), False
+		return frappe.get_doc("Email Account", account_name), False
 
 	return None, False
 
@@ -152,8 +153,8 @@ def can_send_via_m365():
 		bool: True if M365 sending is configured (has default outgoing account)
 	"""
 	account_name = frappe.db.get_value(
-		"M365 Email Account",
-		{"default_outgoing": 1, "enable_outgoing": 1}
+		"Email Account",
+		{"service": "M365", "default_outgoing": 1, "enable_outgoing": 1}
 	)
 	return account_name is not None
 
@@ -182,8 +183,6 @@ def intercept_email_queue(doc, method=None):
 	doc.m365_send = 1
 	doc.m365_account = sending_account.name
 
-	print(f"M365 Email: Marked email '{doc.name}' for M365 sending via {sending_account.account_name}")
-
 
 def send_via_m365(email_queue_doc):
 	"""
@@ -201,10 +200,19 @@ def send_via_m365(email_queue_doc):
 	"""
 	try:
 		# Get the sending account
-		sending_account = frappe.get_doc("M365 Email Account", email_queue_doc.m365_account)
+		sending_account = frappe.get_doc("Email Account", email_queue_doc.m365_account)
+
+		if sending_account.service != "M365":
+			frappe.log_error(
+				title="M365 Email Send Failed: Invalid Account",
+				message=f"Account {email_queue_doc.m365_account} is not an M365 email account"
+			)
+			return False
+
+		service_principal = sending_account.m365_service_principal
 
 		# Get access token
-		access_token = get_access_token(sending_account.service_principal)
+		access_token = get_access_token(service_principal)
 
 		if not access_token:
 			frappe.log_error(
@@ -272,6 +280,9 @@ class M365SendContext:
 		self.sending_account = sending_account
 		self.access_token = access_token
 
+		# Get account email address
+		self.account_email = sending_account.email_id
+
 		# Parse the base MIME message once
 		import email
 		from email import policy
@@ -288,9 +299,9 @@ class M365SendContext:
 			_, sender_email = parseaddr(sender_email)
 
 		# Override sender if using default account
-		if sender_email != sending_account.email_address:
-			print(f"M365 Email: Overriding sender from {sender_email} to {sending_account.email_address}")
-			sender_email = sending_account.email_address
+		if sender_email != self.account_email:
+			print(f"M365 Email: Overriding sender from {sender_email} to {self.account_email}")
+			sender_email = self.account_email
 
 		self.sender_email = sender_email
 
@@ -369,11 +380,13 @@ class M365SendContext:
 		recipient_str = recipient_email if self.queue_doc.get("expose_recipients") != "header" else ""
 		message = message.replace("<!--recipient-->", recipient_str)
 
-		# Append footer if configured
-		if self.sending_account.footer:
+		# Append signature if configured
+		footer = getattr(self.sending_account, 'signature', None)
+
+		if footer:
 			footer_html = f"""
 <div class="m365-email-footer" style="margin-top: 20px; padding-top: 10px; border-top: 1px solid #e0e0e0;">
-{self.sending_account.footer}
+{footer}
 </div>
 """
 			message = message + footer_html

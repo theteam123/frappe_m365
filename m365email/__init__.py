@@ -38,16 +38,16 @@ def patch_email_account():
 				account_name = "M365 Virtual Account"
 
 				if not email_id:
-					# Look up default outgoing M365 account
+					# Look up default outgoing M365 Email Account (using Email Account with service='M365')
 					default_account = frappe.db.get_value(
-						"M365 Email Account",
-						{"default_outgoing": 1, "enable_outgoing": 1},
-						["email_address", "account_name"],
+						"Email Account",
+						{"service": "M365", "default_outgoing": 1, "enable_outgoing": 1},
+						["email_id", "email_account_name"],
 						as_dict=True
 					)
 					if default_account:
-						email_id = default_account.email_address
-						account_name = default_account.account_name
+						email_id = default_account.email_id
+						account_name = default_account.email_account_name
 					else:
 						email_id = "noreply@m365.local"
 

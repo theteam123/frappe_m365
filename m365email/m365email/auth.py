@@ -9,6 +9,7 @@ Handles MSAL authentication and token management for multiple tenants
 import json
 import frappe
 from frappe import _
+from frappe.utils.password import encrypt, decrypt
 from datetime import datetime, timedelta
 import msal
 
@@ -99,15 +100,17 @@ def get_access_token(service_principal_name, force_refresh=False):
 def get_service_principal_for_email_account(email_account_name):
 	"""
 	Get the service principal associated with an email account
-	
+
 	Args:
-		email_account_name: Name of the M365 Email Account
-		
+		email_account_name: Name of Email Account with service='M365'
+
 	Returns:
 		M365 Email Service Principal Settings doc
 	"""
-	email_account = frappe.get_doc("M365 Email Account", email_account_name)
-	return frappe.get_doc("M365 Email Service Principal Settings", email_account.service_principal)
+	email_account = frappe.get_doc("Email Account", email_account_name)
+	if email_account.service != "M365":
+		frappe.throw(_("Not an M365 email account"))
+	return frappe.get_doc("M365 Email Service Principal Settings", email_account.m365_service_principal)
 
 
 def refresh_token(service_principal_name):
@@ -146,7 +149,7 @@ def _get_token_cache(sp_settings):
 	if sp_settings.token_cache:
 		try:
 			# Decrypt and deserialize token cache
-			decrypted_cache = frappe.utils.password.decrypt(sp_settings.token_cache)
+			decrypted_cache = decrypt(sp_settings.token_cache)
 			cache.deserialize(decrypted_cache)
 		except Exception as e:
 			frappe.log_error(
@@ -169,8 +172,8 @@ def _save_token_cache(sp_settings, token_cache):
 		try:
 			# Serialize and encrypt token cache
 			serialized_cache = token_cache.serialize()
-			encrypted_cache = frappe.utils.password.encrypt(serialized_cache)
-			
+			encrypted_cache = encrypt(serialized_cache)
+
 			sp_settings.db_set("token_cache", encrypted_cache, update_modified=False)
 		except Exception as e:
 			frappe.log_error(

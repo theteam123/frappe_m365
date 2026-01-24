@@ -17,14 +17,18 @@ def inspect_event_data(email_account_name, limit=5, include_future=False):
 	Fetch and inspect raw M365 event data to debug field mapping
 
 	Args:
-		email_account_name: Name of M365 Email Account
+		email_account_name: Name of Email Account with service='M365'
 		limit: Number of events to inspect (default: 5)
 		include_future: If True, fetch future events instead of using delta (default: False)
 	"""
-	email_account = frappe.get_doc("M365 Email Account", email_account_name)
+	email_account = frappe.get_doc("Email Account", email_account_name)
+
+	if email_account.service != "M365":
+		print(f"Error: {email_account_name} is not an M365 email account")
+		return
 
 	# Get access token
-	access_token = get_access_token(email_account.service_principal)
+	access_token = get_access_token(email_account.m365_service_principal)
 
 	if include_future:
 		# Fetch future events using regular list endpoint
@@ -33,7 +37,7 @@ def inspect_event_data(email_account_name, limit=5, include_future=False):
 
 		# Get events from today onwards
 		today = datetime.utcnow().strftime("%Y-%m-%dT00:00:00Z")
-		endpoint = f"/users/{email_account.email_address}/calendar/events"
+		endpoint = f"/users/{email_account.email_id}/calendar/events"
 		params = {
 			"$filter": f"start/dateTime ge '{today}'",
 			"$orderby": "start/dateTime",
@@ -44,14 +48,14 @@ def inspect_event_data(email_account_name, limit=5, include_future=False):
 	else:
 		# Fetch events using delta query
 		response = get_calendar_events_delta(
-			email_account.email_address,
+			email_account.email_id,
 			access_token,
 			delta_token=None
 		)
 		events = response.get("value", [])[:limit]
-	
+
 	print(f"\n{'='*80}")
-	print(f"Inspecting {len(events)} events from {email_account.email_address}")
+	print(f"Inspecting {len(events)} events from {email_account.email_id}")
 	print(f"{'='*80}\n")
 	
 	for i, event in enumerate(events, 1):

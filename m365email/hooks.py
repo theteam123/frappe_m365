@@ -43,7 +43,9 @@ app_license = "mit"
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"Email Account": "public/js/email_account.js"
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -85,10 +87,16 @@ app_license = "mit"
 # before_install = "m365email.install.before_install"
 after_install = "m365email.m365email.custom_fields.create_m365_custom_fields"
 
+# Migration
+# ---------
+# Create/update custom fields on bench migrate
+after_migrate = "m365email.m365email.custom_fields.create_m365_custom_fields"
+
 # Boot Session
 # ------------
-# Called when user session is created
-boot_session = "m365email.m365email.boot_session"
+# No longer needed - M365 accounts are now integrated into Email Account
+# with service='M365' and appear automatically in Frappe's email lists
+# boot_session = "m365email.m365email.boot_session"
 
 # Uninstallation
 # ------------
@@ -149,7 +157,9 @@ doc_events = {
 }
 
 # Override Email Queue send method to skip SMTP for M365 emails
+# Override Email Account to support M365 service type
 override_doctype_class = {
+	"Email Account": "m365email.m365email.email_account_override.M365EmailAccount",
 	"Email Queue": "m365email.m365email.email_queue_override.M365EmailQueue"
 }
 
@@ -161,11 +171,9 @@ scheduler_events = {
 		"*/5 * * * *": [
 			"m365email.m365email.tasks.sync_all_email_accounts",
 			"m365email.m365email.tasks.sync_all_calendar_events"
-		],
-		"* * * * *": [
-			# Process M365 email queue every minute
-			"m365email.m365email.send.process_email_queue_m365"
 		]
+		# M365 emails are now processed by Frappe's standard email queue
+		# via our M365EmailQueue.send() override - no separate task needed
 	},
 	"hourly": [
 		"m365email.m365email.tasks.refresh_all_tokens"

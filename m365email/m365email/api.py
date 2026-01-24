@@ -19,54 +19,64 @@ from m365email.m365email.utils import user_can_configure_account
 def enable_email_sync(email_address, service_principal, account_type="User Mailbox"):
 	"""
 	Enable email sync for current user's mailbox
-	
+
+	Creates an Email Account with service='M365' (new approach).
+
 	Args:
 		email_address: User's email address
 		service_principal: Service principal name
 		account_type: "User Mailbox" or "Shared Mailbox"
-		
+
 	Returns:
 		dict: Created email account details
 	"""
 	user = frappe.session.user
-	
+
 	# For Shared Mailbox, only System Manager can create
 	if account_type == "Shared Mailbox":
 		if "System Manager" not in frappe.get_roles(user):
 			frappe.throw(_("Only System Manager can configure shared mailboxes"))
-	
-	# Check if account already exists
-	existing = frappe.db.exists(
-		"M365 Email Account",
+
+	# Check if account already exists in Email Account
+	existing_email_account = frappe.db.exists(
+		"Email Account",
 		{
-			"email_address": email_address,
-			"service_principal": service_principal
+			"email_id": email_address,
+			"service": "M365"
 		}
 	)
-	
-	if existing:
-		frappe.throw(_("Email account already exists for this email address and service principal"))
-	
-	# Create email account
+
+	if existing_email_account:
+		frappe.throw(_("Email account already exists for this email address"))
+
+	# Create Email Account with service='M365'
 	account = frappe.get_doc({
-		"doctype": "M365 Email Account",
-		"account_name": f"M365-{email_address}",
-		"account_type": account_type,
-		"email_address": email_address,
-		"user": user,
-		"service_principal": service_principal,
-		"enabled": 1,
-		"folder_filter": [
+		"doctype": "Email Account",
+		"email_account_name": f"M365-{email_address}",
+		"email_id": email_address,
+		"service": "M365",
+		"enable_incoming": 1,
+		"enable_outgoing": 1,
+		"default_incoming": 0,
+		"default_outgoing": 0,
+		# M365-specific fields
+		"m365_service_principal": service_principal,
+		"m365_account_type": account_type,
+		"m365_sync_attachments": 1,
+		"m365_max_attachment_size": 10,
+		# Folder filters as child table
+		"m365_folder_filter": [
 			{"folder_name": "Inbox", "sync_enabled": 1},
 			{"folder_name": "Sent Items", "sync_enabled": 0}
 		]
 	})
 	account.insert()
 	frappe.db.commit()
-	
+
 	return {
 		"success": True,
 		"account_name": account.name,
+		"doctype": "Email Account",
 		"message": _("Email sync enabled successfully")
 	}
 
@@ -75,23 +85,26 @@ def enable_email_sync(email_address, service_principal, account_type="User Mailb
 def disable_email_sync(email_account_name):
 	"""
 	Disable email sync for an account
-	
+
 	Args:
-		email_account_name: Name of M365 Email Account
-		
+		email_account_name: Name of Email Account with service='M365'
+
 	Returns:
 		dict: Success message
 	"""
-	account = frappe.get_doc("M365 Email Account", email_account_name)
-	
+	account = frappe.get_doc("Email Account", email_account_name)
+
+	if account.service != "M365":
+		frappe.throw(_("Not an M365 email account"))
+
 	# Check permissions
-	if not user_can_configure_account(frappe.session.user, account):
+	if not frappe.has_permission("Email Account", "write", email_account_name):
 		frappe.throw(_("You don't have permission to configure this email account"))
-	
-	account.enabled = 0
+
+	account.enable_incoming = 0
 	account.save()
 	frappe.db.commit()
-	
+
 	return {
 		"success": True,
 		"message": _("Email sync disabled successfully")
@@ -104,20 +117,21 @@ def trigger_manual_sync(email_account_name):
 	Manually trigger sync for an email account
 
 	Args:
-		email_account_name: Name of M365 Email Account
+		email_account_name: Name of Email Account with service='M365'
 
 	Returns:
 		dict: Sync results
 	"""
-	account = frappe.get_doc("M365 Email Account", email_account_name)
+	account = frappe.get_doc("Email Account", email_account_name)
+
+	if account.service != "M365":
+		frappe.throw(_("Not an M365 email account"))
 
 	# Check permissions
-	if not user_can_configure_account(frappe.session.user, account):
+	if not frappe.has_permission("Email Account", "read", email_account_name):
 		frappe.throw(_("You don't have permission to sync this email account"))
 
-	result = sync_email_account(email_account_name)
-
-	return result
+	return sync_email_account(email_account_name)
 
 
 @frappe.whitelist()
@@ -126,43 +140,46 @@ def trigger_manual_event_sync(email_account_name):
 	Manually trigger calendar event sync for an email account
 
 	Args:
-		email_account_name: Name of M365 Email Account
+		email_account_name: Name of Email Account with service='M365'
 
 	Returns:
 		dict: Sync results
 	"""
-	account = frappe.get_doc("M365 Email Account", email_account_name)
+	account = frappe.get_doc("Email Account", email_account_name)
+
+	if account.service != "M365":
+		frappe.throw(_("Not an M365 email account"))
 
 	# Check permissions
-	if not user_can_configure_account(frappe.session.user, account):
+	if not frappe.has_permission("Email Account", "read", email_account_name):
 		frappe.throw(_("You don't have permission to sync this email account"))
 
-	result = sync_calendar_events(email_account_name)
-
-	return result
+	return sync_calendar_events(email_account_name)
 
 
 @frappe.whitelist()
 def get_sync_status(email_account_name=None):
 	"""
 	Get sync status and recent logs
-	
+
 	Args:
-		email_account_name: Name of M365 Email Account (optional)
-		
+		email_account_name: Name of Email Account with service='M365' (optional)
+
 	Returns:
 		dict: Sync status information
 	"""
 	user = frappe.session.user
-	
+
 	if email_account_name:
-		# Get status for specific account
-		account = frappe.get_doc("M365 Email Account", email_account_name)
-		
+		account = frappe.get_doc("Email Account", email_account_name)
+
+		if account.service != "M365":
+			frappe.throw(_("Not an M365 email account"))
+
 		# Check permissions
-		if not user_can_configure_account(user, account):
+		if not frappe.has_permission("Email Account", "read", email_account_name):
 			frappe.throw(_("You don't have permission to view this email account"))
-		
+
 		# Get recent logs
 		logs = frappe.get_all(
 			"M365 Email Sync Log",
@@ -171,25 +188,43 @@ def get_sync_status(email_account_name=None):
 			order_by="start_time desc",
 			limit=10
 		)
-		
+
 		return {
 			"account": account.as_dict(),
 			"logs": logs
 		}
 	else:
-		# Get all accounts for current user
-		filters = {"user": user}
+		# Get all M365 accounts
+		all_accounts = []
+
+		# Get Email Accounts with service='M365'
 		if "System Manager" in frappe.get_roles(user):
-			filters = {}  # System Manager can see all
-		
-		accounts = frappe.get_all(
-			"M365 Email Account",
-			filters=filters,
-			fields=["name", "account_name", "account_type", "email_address", "enabled", "last_sync_time", "last_sync_status"]
-		)
-		
+			m365_email_accounts = frappe.get_all(
+				"Email Account",
+				filters={"service": "M365"},
+				fields=["name", "email_account_name", "email_id", "enable_incoming", "m365_last_sync_time", "m365_last_sync_status"]
+			)
+		else:
+			# For non-admin users, they see their linked email accounts
+			m365_email_accounts = frappe.get_all(
+				"Email Account",
+				filters={"service": "M365"},
+				fields=["name", "email_account_name", "email_id", "enable_incoming", "m365_last_sync_time", "m365_last_sync_status"]
+			)
+
+		for acc in m365_email_accounts:
+			all_accounts.append({
+				"name": acc.name,
+				"account_name": acc.email_account_name,
+				"email_address": acc.email_id,
+				"enabled": acc.enable_incoming,
+				"last_sync_time": acc.m365_last_sync_time,
+				"last_sync_status": acc.m365_last_sync_status,
+				"doctype": "Email Account"
+			})
+
 		return {
-			"accounts": accounts
+			"accounts": all_accounts
 		}
 
 
@@ -234,23 +269,34 @@ def get_available_service_principals():
 def get_shared_mailboxes():
 	"""
 	Get all configured shared mailboxes
-	System Manager sees all, others see none (unless they have Inbox User role for Communications)
-	
+	System Manager sees all, others see none
+
 	Returns:
-		list: Shared mailboxes
+		list: Shared mailboxes (Email Accounts with service='M365' and m365_account_type='Shared Mailbox')
 	"""
-	filters = {"account_type": "Shared Mailbox"}
-	
 	# Only System Manager can see shared mailbox configurations
 	if "System Manager" not in frappe.get_roles(frappe.session.user):
 		return []
-	
-	shared_mailboxes = frappe.get_all(
-		"M365 Email Account",
-		filters=filters,
-		fields=["name", "account_name", "email_address", "enabled", "last_sync_time", "last_sync_status"]
+
+	# Get Email Accounts with service='M365' and m365_account_type='Shared Mailbox'
+	m365_email_accounts = frappe.get_all(
+		"Email Account",
+		filters={"service": "M365", "m365_account_type": "Shared Mailbox"},
+		fields=["name", "email_account_name", "email_id", "enable_incoming", "m365_last_sync_time", "m365_last_sync_status"]
 	)
-	
+
+	shared_mailboxes = []
+	for acc in m365_email_accounts:
+		shared_mailboxes.append({
+			"name": acc.name,
+			"account_name": acc.email_account_name,
+			"email_address": acc.email_id,
+			"enabled": acc.enable_incoming,
+			"last_sync_time": acc.m365_last_sync_time,
+			"last_sync_status": acc.m365_last_sync_status,
+			"doctype": "Email Account"
+		})
+
 	return shared_mailboxes
 
 
@@ -258,26 +304,32 @@ def get_shared_mailboxes():
 def get_available_folders(email_account_name):
 	"""
 	Get available mail folders for an email account
-	
+
 	Args:
-		email_account_name: Name of M365 Email Account
-		
+		email_account_name: Name of Email Account with service='M365'
+
 	Returns:
 		list: Available folders
 	"""
-	account = frappe.get_doc("M365 Email Account", email_account_name)
-	
+	account = frappe.get_doc("Email Account", email_account_name)
+
+	if account.service != "M365":
+		frappe.throw(_("Not an M365 email account"))
+
 	# Check permissions
-	if not user_can_configure_account(frappe.session.user, account):
+	if not frappe.has_permission("Email Account", "read", email_account_name):
 		frappe.throw(_("You don't have permission to view this email account"))
-	
+
+	email_address = account.email_id
+	service_principal = account.m365_service_principal
+
 	# Get access token
-	access_token = get_access_token(account.service_principal)
-	
+	access_token = get_access_token(service_principal)
+
 	# Get folders from Graph API
-	response = get_mail_folders(account.email_address, access_token)
+	response = get_mail_folders(email_address, access_token)
 	folders = response.get("value", [])
-	
+
 	# Format folder list
 	folder_list = []
 	for folder in folders:
@@ -287,7 +339,7 @@ def get_available_folders(email_account_name):
 			"totalItemCount": folder.get("totalItemCount"),
 			"unreadItemCount": folder.get("unreadItemCount")
 		})
-	
+
 	return folder_list
 
 
@@ -295,39 +347,42 @@ def get_available_folders(email_account_name):
 def update_folder_filters(email_account_name, folders):
 	"""
 	Update folder filters for an email account
-	
+
 	Args:
-		email_account_name: Name of M365 Email Account
+		email_account_name: Name of Email Account with service='M365'
 		folders: List of folder dicts with folder_name and sync_enabled
-		
+
 	Returns:
 		dict: Success message
 	"""
 	import json
-	
-	account = frappe.get_doc("M365 Email Account", email_account_name)
-	
-	# Check permissions
-	if not user_can_configure_account(frappe.session.user, account):
-		frappe.throw(_("You don't have permission to configure this email account"))
-	
+
 	# Parse folders if string
 	if isinstance(folders, str):
 		folders = json.loads(folders)
-	
-	# Clear existing filters
-	account.folder_filter = []
-	
-	# Add new filters
+
+	account = frappe.get_doc("Email Account", email_account_name)
+
+	if account.service != "M365":
+		frappe.throw(_("Not an M365 email account"))
+
+	# Check permissions
+	if not frappe.has_permission("Email Account", "write", email_account_name):
+		frappe.throw(_("You don't have permission to configure this email account"))
+
+	# Clear existing folder filters
+	account.m365_folder_filter = []
+
+	# Add new filters using child table
 	for folder in folders:
-		account.append("folder_filter", {
+		account.append("m365_folder_filter", {
 			"folder_name": folder.get("folder_name"),
 			"sync_enabled": folder.get("sync_enabled", 1)
 		})
-	
+
 	account.save()
 	frappe.db.commit()
-	
+
 	return {
 		"success": True,
 		"message": _("Folder filters updated successfully")

@@ -26,25 +26,32 @@ def sync_calendar_events(email_account_name):
 	Handles both initial sync and incremental delta sync
 
 	Args:
-		email_account_name: Name of M365 Email Account
+		email_account_name: Name of Email Account with service='M365'
 
 	Returns:
 		dict: Sync results
 	"""
-	email_account = frappe.get_doc("M365 Email Account", email_account_name)
+	email_account = frappe.get_doc("Email Account", email_account_name)
 
-	if not email_account.sync_events:
+	if email_account.service != "M365":
+		return {"success": False, "message": "Not an M365 email account"}
+
+	if not email_account.m365_sync_events:
 		return {"success": False, "message": "Calendar event sync is not enabled"}
+
+	# Get field values
+	email_address = email_account.email_id
+	account_display_name = email_account.email_account_name or email_account.name
 
 	try:
 		# Get access token
-		access_token = get_access_token(email_account.service_principal)
+		access_token = get_access_token(email_account.m365_service_principal)
 
 		# Get delta token for calendar events
 		delta_tokens = {}
-		if email_account.delta_tokens:
+		if email_account.m365_delta_tokens:
 			try:
-				delta_tokens = json.loads(email_account.delta_tokens)
+				delta_tokens = json.loads(email_account.m365_delta_tokens)
 			except:
 				delta_tokens = {}
 
@@ -52,15 +59,15 @@ def sync_calendar_events(email_account_name):
 
 		# Get sync_from_date from email account settings
 		sync_from_date = None
-		if email_account.sync_from_date:
+		if email_account.m365_sync_from_date:
 			from frappe.utils import get_datetime
-			sync_from_date = get_datetime(email_account.sync_from_date)
+			sync_from_date = get_datetime(email_account.m365_sync_from_date)
 
 		# For initial sync (no delta token), use calendarView endpoint to get all events
 		# calendarView automatically expands recurring events into individual instances
 		# Delta queries only return changes, not all events on first sync
 		if not calendar_delta_token:
-			print(f"M365 Event Sync: Performing initial full sync for {email_account.account_name}")
+			print(f"M365 Event Sync: Performing initial full sync for {account_display_name}")
 
 			# Use calendarView endpoint which expands recurring events
 			from datetime import datetime, timedelta
@@ -78,7 +85,7 @@ def sync_calendar_events(email_account_name):
 			end_date_str = end_date.strftime("%Y-%m-%dT23:59:59Z")
 
 			# Use calendarView which expands recurring events
-			endpoint = f"/users/{email_account.email_address}/calendar/calendarView"
+			endpoint = f"/users/{email_address}/calendar/calendarView"
 			params = {
 				"startDateTime": start_date_str,
 				"endDateTime": end_date_str,
@@ -89,7 +96,7 @@ def sync_calendar_events(email_account_name):
 
 			# After initial sync, get delta token for future incremental syncs
 			delta_response = get_calendar_events_delta(
-				email_account.email_address,
+				email_address,
 				access_token,
 				delta_token=None
 			)
@@ -97,12 +104,12 @@ def sync_calendar_events(email_account_name):
 			delta_link = delta_response.get("@odata.deltaLink")
 			if delta_link:
 				delta_tokens["calendar_events"] = delta_link
-				email_account.db_set("delta_tokens", json.dumps(delta_tokens), update_modified=False)
+				email_account.db_set("m365_delta_tokens", json.dumps(delta_tokens), update_modified=False)
 		else:
 			# Use delta query for incremental sync
-			print(f"M365 Event Sync: Performing incremental sync for {email_account.account_name}")
+			print(f"M365 Event Sync: Performing incremental sync for {account_display_name}")
 			response = get_calendar_events_delta(
-				email_account.email_address,
+				email_address,
 				access_token,
 				delta_token=calendar_delta_token
 			)
@@ -114,12 +121,6 @@ def sync_calendar_events(email_account_name):
 		deleted = 0
 		failed = 0
 		skipped = 0
-
-		# Get sync_from_date filter
-		sync_from_date = None
-		if email_account.sync_from_date:
-			from frappe.utils import get_datetime
-			sync_from_date = get_datetime(email_account.sync_from_date)
 
 		# Process each event
 		for event in events:
@@ -137,7 +138,7 @@ def sync_calendar_events(email_account_name):
 						# Fetch full event details
 						try:
 							full_event = get_calendar_event_details(
-								email_account.email_address,
+								email_address,
 								event_id,
 								access_token
 							)
@@ -165,15 +166,15 @@ def sync_calendar_events(email_account_name):
 					title="M365 Event Sync: Failed to sync event",
 					message=f"Event ID: {event.get('id')}\nSubject: {event.get('subject', 'N/A')}\n\nError: {str(e)}"
 				)
-		
+
 		# Save new delta token
 		delta_link = response.get("@odata.deltaLink")
 		if delta_link:
 			delta_tokens["calendar_events"] = delta_link
-			email_account.db_set("delta_tokens", json.dumps(delta_tokens), update_modified=False)
-		
+			email_account.db_set("m365_delta_tokens", json.dumps(delta_tokens), update_modified=False)
+
 		frappe.db.commit()
-		
+
 		return {
 			"success": True,
 			"fetched": fetched,
@@ -183,7 +184,7 @@ def sync_calendar_events(email_account_name):
 			"skipped": skipped,
 			"failed": failed
 		}
-		
+
 	except Exception as e:
 		frappe.log_error(
 			title=f"M365 Event Sync Failed: {email_account.name}",
@@ -202,7 +203,7 @@ def create_or_update_event(event_data, email_account, access_token):
 
 	Args:
 		event_data: Event dict from Graph API
-		email_account: M365 Email Account doc
+		email_account: Email Account doc with service='M365'
 		access_token: Access token for additional API calls if needed
 
 	Returns:
@@ -210,22 +211,16 @@ def create_or_update_event(event_data, email_account, access_token):
 	"""
 	event_id = event_data.get("id")
 	ical_uid = event_data.get("iCalUId")
-	
+
 	# Check if event already exists
 	existing = frappe.db.get_value(
 		"Event",
 		{"m365_event_id": event_id},
 		["name", "modified"]
 	)
-	
+
 	# Parse event data
 	subject = event_data.get("subject")
-
-	# Debug logging (optional)
-	# if not subject:
-	# 	print(f"M365 Event {event_id[:20]}... has no subject field in API response")
-	# elif subject.strip() == "":
-	# 	print(f"M365 Event {event_id[:20]}... has empty subject")
 
 	# Set default if subject is missing or empty
 	if not subject or subject.strip() == "":
@@ -243,7 +238,8 @@ def create_or_update_event(event_data, email_account, access_token):
 	end_datetime_utc = parse_m365_datetime(event_data.get("end", {}).get("dateTime"))
 
 	# Get user's timezone from email account settings
-	user_timezone = email_account.user_timezone or "Australia/Perth"
+	user_timezone = email_account.m365_user_timezone or "Australia/Perth"
+	owner_user = email_account.owner
 
 	# Convert from UTC to user's timezone
 	if start_datetime_utc:
@@ -315,8 +311,8 @@ def create_or_update_event(event_data, email_account, access_token):
 			"m365_email_account": email_account.name,
 			"m365_icaluid": ical_uid,
 			"m365_timezone": original_timezone,  # Store original timezone
-			"owner": email_account.user,
-			"event_participants": [{"reference_doctype": "User", "reference_docname": email_account.user}]
+			"owner": owner_user,
+			"event_participants": [{"reference_doctype": "User", "reference_docname": owner_user}] if owner_user else []
 		})
 		event_doc.insert(ignore_permissions=True)
 		frappe.db.commit()

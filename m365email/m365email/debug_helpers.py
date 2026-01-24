@@ -57,25 +57,34 @@ def check_m365_sending_config():
 	"""
 	Check M365 sending configuration
 	"""
-	from m365email.m365email.send import get_sending_account, can_send_via_m365
-	
+	from m365email.m365email.send import can_send_via_m365
+
 	print("\n" + "="*80)
 	print("M365 SENDING CONFIGURATION")
 	print("="*80)
-	
+
 	can_send = can_send_via_m365()
 	print(f"\nM365 Sending Available: {can_send}")
-	
+
 	if can_send:
-		account = get_sending_account()
-		print(f"Sending Account: {account.account_name}")
-		print(f"Email Address: {account.email_address}")
-		print(f"Service Principal: {account.service_principal}")
-		print(f"Enabled: {account.enabled}")
-		print(f"Use for Sending: {account.use_for_sending}")
+		# Get default outgoing M365 Email Account
+		account = frappe.get_value(
+			"Email Account",
+			{"service": "M365", "default_outgoing": 1, "enable_outgoing": 1},
+			["name", "email_account_name", "email_id", "m365_service_principal", "enable_incoming", "enable_outgoing"],
+			as_dict=True
+		)
+		if account:
+			print(f"Sending Account: {account.email_account_name}")
+			print(f"Email Address: {account.email_id}")
+			print(f"Service Principal: {account.m365_service_principal}")
+			print(f"Enable Incoming: {account.enable_incoming}")
+			print(f"Enable Outgoing: {account.enable_outgoing}")
+		else:
+			print("No default outgoing M365 Email Account found")
 	else:
 		print("No M365 Email Account marked for sending")
-	
+
 	print("="*80 + "\n")
 
 
