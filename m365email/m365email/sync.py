@@ -370,21 +370,25 @@ def sync_attachments_for_communication(comm_name, email_account, message_id, acc
 					continue
 
 				# Download attachment content
-				content = download_attachment(
+				# Graph API returns attachment object with contentBytes field
+				attachment_data = download_attachment(
 					email_account.email_id,
 					message_id,
 					attachment.get("id"),
 					access_token
 				)
 
-				if content:
-					# Create Frappe file
+				# Extract contentBytes from the response
+				content_bytes = attachment_data.get("contentBytes") if isinstance(attachment_data, dict) else None
+
+				if content_bytes:
+					# Create Frappe file - contentBytes is base64 encoded
 					file_doc = frappe.get_doc({
 						"doctype": "File",
 						"file_name": attachment.get("name"),
 						"attached_to_doctype": "Communication",
 						"attached_to_name": comm_name,
-						"content": base64.b64decode(content) if isinstance(content, str) else content
+						"content": base64.b64decode(content_bytes)
 					})
 					file_doc.insert(ignore_permissions=True)
 
